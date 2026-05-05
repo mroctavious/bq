@@ -1,0 +1,70 @@
+#!/bin/bash
+set -euo pipefail
+
+PROGRAM_NAME=jsq
+PYTHON_PROG_NAME="/home/xalotzin/.local/share/pipx/venvs/numpy/bin/python"
+test_id="${1:-0}"
+config_path="${2:-simulation_config.json}"
+algorithm_override="${3:-}"
+folder_name="tests/${test_id}"
+header="ts_us,event,job_id,worktime,qid,worker_id,qsize,qweight,extra"
+initial_pwd="$(pwd)"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+
+if [ "$config_path" = "simulation_config.json" ] && [ $# -lt 2 ]; then
+    config_path="${script_dir}/simulation_config.json"
+elif [[ "$config_path" != /* ]]; then
+    config_path="${initial_pwd}/${config_path}"
+fi
+
+cd "$script_dir"
+
+read -r nqueues sample_every bin_ms < <("$PYTHON_PROG_NAME" -c '
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    cfg = json.load(fh)
+
+sim = cfg.get("simulation", cfg)
+plot = cfg.get("plot", {})
+
+print(
+    sim.get("nqueues", 8192),
+    plot.get("sample_every", 2000),
+    plot.get("bin_ms", 100),
+)
+' "$config_path")
+
+#Compilar
+make
+
+#Ejecutar
+mkdir -p "${folder_name}/plots"
+echo "$header" > "${folder_name}/JSQ_simulation.log"
+echo "$header" > "${folder_name}/workers_simulation.log"
+if [ -n "$algorithm_override" ]; then
+    "./${PROGRAM_NAME}" "$folder_name" "$config_path" "$algorithm_override"
+else
+    "./${PROGRAM_NAME}" "$folder_name" "$config_path"
+fi
+
+#Unir
+cat "${folder_name}"/worker_*.log >> "${folder_name}/workers_simulation.log"
+
+#Graficar
+"$PYTHON_PROG_NAME" plot_jsq.py \
+    "${folder_name}/JSQ_simulation.log" \
+    "${folder_name}/workers_simulation.log" \
+    "${nqueues}" \
+    "${sample_every}" \
+    "${bin_ms}" \
+    "${folder_name}/plots" \
+    "_${test_id}"
+
+#cd ~/JSQ
+#python3 -m venv .venv
+#source .venv/bin/activate
+#python -m pip install -U pip
+#python -m pip install pandas numpy matplotlib
+#python plot_jsq.py default/JSQ_simulation.log default/workers_simulation.log 64
