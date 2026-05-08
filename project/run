@@ -63,7 +63,8 @@ run_algorithm() {
 
     "./${PROGRAM_NAME}" "$run_folder" "$config_path" "$algorithm"
 
-    cat "${run_folder}"/worker_*.log >> "${run_folder}/workers_simulation.log"
+    find "$run_folder" -maxdepth 1 -name 'worker_*.log' -print0 \
+        | xargs -0 cat >> "${run_folder}/workers_simulation.log"
 
     "$PYTHON_PROG_NAME" plot_jsq.py \
         "${run_folder}/JSQ_simulation.log" \
