@@ -1,0 +1,11 @@
+project/jsq
+project/tests/
+project/results/*
+!project/results/*summary*.txt
+!project/results/*summary*.csv
+!project/results/*comparison*.csv
+!project/results/*best*config.json
+OLD/
+imgs/
+*.log
+*.png

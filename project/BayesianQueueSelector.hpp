@@ -299,6 +299,9 @@ public:
         double best_probability = -1.0;
         std::optional<std::size_t> best_index;
         std::size_t best_queue_size = std::numeric_limits<std::size_t>::max();
+        std::size_t best_tie_count = 0;
+
+        thread_local std::mt19937 rng {std::random_device{}()};
 
         if (sample_size == active_indices_.size()) {
             for (const auto queue_index : active_indices_) {
@@ -308,14 +311,15 @@ public:
                     status_provider,
                     best_probability,
                     best_index,
-                    best_queue_size
+                    best_queue_size,
+                    best_tie_count,
+                    rng
                 );
             }
 
             return best_index;
         }
 
-        thread_local std::mt19937 rng {std::random_device{}()};
         std::uniform_int_distribution<std::size_t> dist(
             0,
             active_indices_.size() - 1
@@ -339,7 +343,9 @@ public:
                 status_provider,
                 best_probability,
                 best_index,
-                best_queue_size
+                best_queue_size,
+                best_tie_count,
+                rng
             );
         }
 
@@ -504,7 +510,9 @@ private:
         StatusProvider& status_provider,
         double& best_probability,
         std::optional<std::size_t>& best_index,
-        std::size_t& best_queue_size
+        std::size_t& best_queue_size,
+        std::size_t& best_tie_count,
+        std::mt19937& rng
     ) const {
         const auto& queue = queues_[queue_index];
 
@@ -513,22 +521,29 @@ private:
         double probability = probability_assignment_high(evidence, config_);
 
         bool better = false;
+        bool reset_ties = false;
 
         if (probability > best_probability) {
             better = true;
+            reset_ties = true;
         } else if (probability == best_probability &&
                    evidence.status.queue_size < best_queue_size) {
             better = true;
+            reset_ties = true;
         } else if (probability == best_probability &&
-                   evidence.status.queue_size == best_queue_size &&
-                   (!best_index.has_value() || queue.index < *best_index)) {
-            better = true;
+                   evidence.status.queue_size == best_queue_size) {
+            best_tie_count++;
+            std::uniform_int_distribution<std::size_t> tie_dist(1, best_tie_count);
+            better = tie_dist(rng) == 1;
         }
 
         if (better) {
             best_probability = probability;
             best_index = queue.index;
             best_queue_size = evidence.status.queue_size;
+            if (reset_ties) {
+                best_tie_count = 1;
+            }
         }
     }
 

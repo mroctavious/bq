@@ -1,0 +1,47 @@
+Many queues weight/rho/rate/queue_size search
+20 pruebas, 1024 colas, 1 worker/cola, 10 segundos, arrival_interval_us=50
+Cada prueba corrio JSQ, LSL/LWL, POWER_OF_2 y BAYES_PARTIAL.
+score = 45% balance colas + 35% attended throughput + 15% dispatch throughput + 5% balance workers
+
+Top Bayes configs:
+216: w2_2_base_fast | score=0.7755 | w=2-2 | attended=200000 | att/s=19885 | queue_cv=0.8123 | sample M/H=3/5 | q=2/6 | rate=1/3 | rho=0.8/1.2
+213: w1_2_base_fast | score=0.7732 | w=1-2 | attended=199999 | att/s=19901 | queue_cv=0.8288 | sample M/H=3/5 | q=2/6 | rate=1/3 | rho=0.8/1.2
+210: w1_1_base_fast | score=0.7696 | w=1-1 | attended=199999 | att/s=19892 | queue_cv=0.8523 | sample M/H=3/5 | q=2/6 | rate=1/3 | rho=0.8/1.2
+205: w0_2_base_fast | score=0.7695 | w=0-2 | attended=200000 | att/s=19886 | queue_cv=0.8523 | sample M/H=3/5 | q=2/6 | rate=1/3 | rho=0.8/1.2
+201: w0_1_q_tight | score=0.7671 | w=0-1 | attended=200000 | att/s=19904 | queue_cv=0.8709 | sample M/H=3/5 | q=1/4 | rate=1/3 | rho=0.8/1.2
+202: w0_1_q_wide | score=0.7670 | w=0-1 | attended=200000 | att/s=19894 | queue_cv=0.8707 | sample M/H=3/5 | q=4/12 | rate=1/3 | rho=0.8/1.2
+200: w0_1_base_fast | score=0.7670 | w=0-1 | attended=200000 | att/s=19893 | queue_cv=0.8706 | sample M/H=3/5 | q=2/6 | rate=1/3 | rho=0.8/1.2
+204: w0_1_rho_loose | score=0.7669 | w=0-1 | attended=199999 | att/s=19894 | queue_cv=0.8737 | sample M/H=3/5 | q=2/6 | rate=1/3 | rho=1.0/1.8
+203: w0_1_rho_strict | score=0.7668 | w=0-1 | attended=199999 | att/s=19886 | queue_cv=0.8713 | sample M/H=3/5 | q=2/6 | rate=1/3 | rho=0.5/0.9
+217: w2_2_q_tight | score=0.7270 | w=2-2 | attended=199999 | att/s=19896 | queue_cv=1.2006 | sample M/H=5/8 | q=1/4 | rate=100/500 | rho=0.8/1.2
+
+Top overall algorithms:
+216: POWER_OF_2 on w2_2_base_fast | score=0.9670 | attended=199999 | queue_cv=0.0707
+218: POWER_OF_2 on w2_2_rho_strict | score=0.9669 | attended=200000 | queue_cv=0.0706
+219: POWER_OF_2 on w2_2_q_wide_rho_loose | score=0.9667 | attended=199999 | queue_cv=0.0707
+213: POWER_OF_2 on w1_2_base_fast | score=0.9666 | attended=199999 | queue_cv=0.0711
+217: POWER_OF_2 on w2_2_q_tight | score=0.9666 | attended=199999 | queue_cv=0.0707
+214: POWER_OF_2 on w1_2_q_tight | score=0.9666 | attended=199999 | queue_cv=0.0711
+207: POWER_OF_2 on w0_2_q_wide_rate_hi | score=0.9665 | attended=199999 | queue_cv=0.0718
+208: POWER_OF_2 on w0_2_rho_strict | score=0.9665 | attended=200000 | queue_cv=0.0718
+206: POWER_OF_2 on w0_2_q_tight_rate_mid | score=0.9664 | attended=199999 | queue_cv=0.0718
+204: POWER_OF_2 on w0_1_rho_loose | score=0.9663 | attended=200000 | queue_cv=0.0720
+212: POWER_OF_2 on w1_1_rho_strict | score=0.9663 | attended=199999 | queue_cv=0.0717
+201: POWER_OF_2 on w0_1_q_tight | score=0.9663 | attended=200000 | queue_cv=0.0721
+
+Bayes vs best non-Bayes, sorted by Bayes advantage:
+216: w2_2_base_fast | delta=-0.1915 vs POWER_OF_2 | Bayes att=200000 | other_delta_att=1 | Bayes queue_cv=0.8123
+213: w1_2_base_fast | delta=-0.1934 vs POWER_OF_2 | Bayes att=199999 | other_delta_att=0 | Bayes queue_cv=0.8288
+210: w1_1_base_fast | delta=-0.1964 vs POWER_OF_2 | Bayes att=199999 | other_delta_att=-1 | Bayes queue_cv=0.8523
+205: w0_2_base_fast | delta=-0.1967 vs POWER_OF_2 | Bayes att=200000 | other_delta_att=1 | Bayes queue_cv=0.8523
+200: w0_1_base_fast | delta=-0.1990 vs POWER_OF_2 | Bayes att=200000 | other_delta_att=1 | Bayes queue_cv=0.8706
+202: w0_1_q_wide | delta=-0.1991 vs POWER_OF_2 | Bayes att=200000 | other_delta_att=0 | Bayes queue_cv=0.8707
+201: w0_1_q_tight | delta=-0.1992 vs POWER_OF_2 | Bayes att=200000 | other_delta_att=0 | Bayes queue_cv=0.8709
+203: w0_1_rho_strict | delta=-0.1994 vs POWER_OF_2 | Bayes att=199999 | other_delta_att=0 | Bayes queue_cv=0.8713
+204: w0_1_rho_loose | delta=-0.1994 vs POWER_OF_2 | Bayes att=199999 | other_delta_att=-1 | Bayes queue_cv=0.8737
+217: w2_2_q_tight | delta=-0.2396 vs POWER_OF_2 | Bayes att=199999 | other_delta_att=0 | Bayes queue_cv=1.2006
+
+Files:
+project/results/many_queues_weight_summary.csv
+project/results/many_queues_weight_comparison.csv
+Each project/results/200..219/result.txt contains one block per algorithm.

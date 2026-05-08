@@ -1,0 +1,30 @@
+Bayesian search summary
+20 pruebas, BAYES_PARTIAL, 10 segundos, 256 colas, 2 workers/cola
+score = 50% balance de colas + 35% dispatch throughput + 10% attended throughput + 5% balance workers
+
+Top 10:
+112: throughput_small | score=0.9964 | dispatch/s=531259 | attended/s=4985 | queue_cv=0.0004 | worker_cv=0.0600 | sample M/H=3/5 | q=2/6 | rho=0.8/1.2
+100: sample_3_5_8 | score=0.9060 | dispatch/s=393698 | attended/s=4996 | queue_cv=0.0005 | worker_cv=0.0580 | sample M/H=5/8 | q=2/6 | rho=0.8/1.2
+110: small_sample_hard_q | score=0.8718 | dispatch/s=341840 | attended/s=4999 | queue_cv=0.0006 | worker_cv=0.0578 | sample M/H=6/12 | q=2/5 | rho=0.8/1.2
+113: throughput_mid | score=0.8287 | dispatch/s=276386 | attended/s=5001 | queue_cv=0.0008 | worker_cv=0.0571 | sample M/H=8/12 | q=2/6 | rho=0.8/1.2
+107: rho_loose | score=0.7989 | dispatch/s=231069 | attended/s=5000 | queue_cv=0.0008 | worker_cv=0.0556 | sample M/H=10/20 | q=2/6 | rho=1.0/1.8
+101: sample_5_10_20 | score=0.7978 | dispatch/s=229410 | attended/s=5000 | queue_cv=0.0008 | worker_cv=0.0541 | sample M/H=10/20 | q=2/6 | rho=0.8/1.2
+104: q_sensitive_3_8 | score=0.7975 | dispatch/s=228782 | attended/s=5007 | queue_cv=0.0009 | worker_cv=0.0561 | sample M/H=10/20 | q=3/8 | rho=0.8/1.2
+105: q_sensitive_5_12 | score=0.7973 | dispatch/s=228937 | attended/s=5004 | queue_cv=0.0010 | worker_cv=0.0599 | sample M/H=10/20 | q=5/12 | rho=0.8/1.2
+106: rho_strict | score=0.7971 | dispatch/s=228647 | attended/s=5001 | queue_cv=0.0009 | worker_cv=0.0579 | sample M/H=10/20 | q=2/6 | rho=0.6/1.0
+117: rho_priority | score=0.7795 | dispatch/s=201737 | attended/s=5010 | queue_cv=0.0010 | worker_cv=0.0592 | sample M/H=12/24 | q=3/8 | rho=0.5/0.9
+
+Bottom 5:
+102: sample_10_20_40 | score=0.7301 | dispatch/s=126928 | queue_cv=0.0016
+114: throughput_large | score=0.7182 | dispatch/s=109331 | queue_cv=0.0020
+119: wide_sample_best_guess | score=0.7166 | dispatch/s=106839 | queue_cv=0.0019
+111: large_sample_soft_q | score=0.7045 | dispatch/s=88737 | queue_cv=0.0024
+103: sample_20_40_80 | score=0.6894 | dispatch/s=66712 | queue_cv=0.0032
+
+Recommended config:
+test_id=112
+test_name=throughput_small
+config=/home/xalotzin/bayesiana/project/generated_configs/bayes_search/112_throughput_small.json
+result_dir=project/results/112
+
+All result folders contain result.txt, config.json, run.log, and the generated plots.

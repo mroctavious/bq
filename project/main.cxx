@@ -14,6 +14,7 @@
 #include <queue>
 #include <functional>
 #include <numeric>
+#include <optional>
 #include <omp.h>
 #include <mutex>
 #include <condition_variable>
@@ -75,24 +76,47 @@ public:
 
     void push(const T& value) {
         std::unique_lock<std::mutex> lock(mutex);
+        if (closed) {
+            return;
+        }
         queue.push(value);
         lock.unlock();
         condition.notify_one();
     }
 
-    T pop() {
+    std::optional<T> pop() {
         std::unique_lock<std::mutex> lock(mutex);
-        condition.wait(lock, [this] { return !queue.empty(); });
+        condition.wait(lock, [this] { return closed || !queue.empty(); });
+        if (queue.empty()) {
+            return std::nullopt;
+        }
         T frontValue = queue.front();
         queue.pop();
         return frontValue;
     }
+
+    std::vector<T> close_and_drain() {
+        std::vector<T> drained;
+        std::unique_lock<std::mutex> lock(mutex);
+        closed = true;
+
+        while (!queue.empty()) {
+            drained.push_back(queue.front());
+            queue.pop();
+        }
+
+        lock.unlock();
+        condition.notify_all();
+        return drained;
+    }
+
     SharedQueue() = default;
 
 private:
     std::queue<T> queue;
     std::mutex mutex;
     std::condition_variable condition;
+    bool closed = false;
 };
 
 
@@ -127,6 +151,8 @@ struct SimulationConfig {
     int nworkers = 2;
     int njobs = 10000000;
     int nsimulations = 1000000;
+    double simulation_seconds = 60.0;
+    int arrival_interval_us = 0;
     int min_w = 1;
     int max_w = 200;
 };
@@ -170,6 +196,8 @@ SimulationConfig load_simulation_config(const std::string& filename) {
     config.nworkers = sim->get<int>("nworkers", config.nworkers);
     config.njobs = sim->get<int>("njobs", config.njobs);
     config.nsimulations = sim->get<int>("nsimulations", config.nsimulations);
+    config.simulation_seconds = sim->get<double>("simulation_seconds", config.simulation_seconds);
+    config.arrival_interval_us = sim->get<int>("arrival_interval_us", config.arrival_interval_us);
     config.min_w = sim->get<int>("min_w", config.min_w);
     config.max_w = sim->get<int>("max_w", config.max_w);
 
@@ -242,7 +270,12 @@ void simple_worker(int worker_id, int qidx, QueueList* qlist, const std::string&
             break;
         }
 
-        auto job = q.pop();
+        auto job_opt = q.pop();
+        if (!job_opt.has_value()) {
+            break;
+        }
+
+        auto job = *job_opt;
         if (job.id == -1) {
             break;
         }
@@ -327,6 +360,8 @@ int main(int argc, char **argv){
     auto nworkers = config.nworkers;
     auto njobs = config.njobs;
     auto nsimulations = config.nsimulations;
+    auto simulation_seconds = config.simulation_seconds;
+    auto arrival_interval_us = config.arrival_interval_us;
     auto min_w = config.min_w;
     auto max_w = config.max_w;
 
@@ -342,6 +377,11 @@ int main(int argc, char **argv){
         return 1;
     }
 
+    if( simulation_seconds <= 0.0 && nsimulations <= 0){
+        std::cout << "simulation_seconds or nsimulations must be greater than 0" << std::endl;
+        return 1;
+    }
+
 
     std::cout << "program: " << *argv << std::endl;
     std::cout << "n_args: " << argc << std::endl;
@@ -353,6 +393,8 @@ int main(int argc, char **argv){
     std::cout << "nworkers: " << nworkers << std::endl;
     std::cout << "njobs: " << njobs << std::endl;
     std::cout << "nsimulations: " << nsimulations << std::endl;
+    std::cout << "simulation_seconds: " << simulation_seconds << std::endl;
+    std::cout << "arrival_interval_us: " << arrival_interval_us << std::endl;
 
 
     fs::create_directories(folder_name);
@@ -409,9 +451,24 @@ int main(int argc, char **argv){
         }
 
         std::string message = algorithm_name(algorithm);
-        
-        for(auto i=0; i<nsimulations; i++){
-            Job current_job = Job::create(i, Random::randint(min_w, max_w));
+        int jobs_dispatched = 0;
+        const auto dispatch_start = std::chrono::steady_clock::now();
+        auto next_arrival = dispatch_start;
+
+        while (true) {
+            if (simulation_seconds > 0.0) {
+                const auto elapsed = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - dispatch_start
+                ).count();
+
+                if (elapsed >= simulation_seconds) {
+                    break;
+                }
+            } else if (jobs_dispatched >= nsimulations) {
+                break;
+            }
+
+            Job current_job = Job::create(jobs_dispatched, Random::randint(min_w, max_w));
 
             int qidx = 0;
             if (algorithm == JSQ) {
@@ -439,16 +496,34 @@ int main(int argc, char **argv){
             auto qweight = qinfo.weight.fetch_add(current_job.worktime, std::memory_order_relaxed);
             qinfo.arrivals.fetch_add(1, std::memory_order_relaxed);
             log_event(fout, "PUSH", current_job.id, current_job.worktime, qinfo.id, -1, qsize, qweight,message);
+            jobs_dispatched++;
+
+            if (arrival_interval_us > 0) {
+                next_arrival += std::chrono::microseconds(arrival_interval_us);
+                std::this_thread::sleep_until(next_arrival);
+            }
         }
 
         for(auto& i: qlist){
-            Job current_job = Job::create(-1, 0);
             i->second.finished=true;
-            for(int j=0; j<nworkers; j++){
-                i->first.push(current_job);
+            auto dropped_jobs = i->first.close_and_drain();
+            int dropped_count = 0;
+            int dropped_weight = 0;
+
+            for (const auto& dropped_job : dropped_jobs) {
+                if (dropped_job.id >= 0) {
+                    dropped_count++;
+                    dropped_weight += dropped_job.worktime;
+                }
+            }
+
+            if (dropped_count > 0) {
+                i->second.size.fetch_sub(dropped_count, std::memory_order_relaxed);
+                i->second.weight.fetch_sub(dropped_weight, std::memory_order_relaxed);
             }
         }
         fout.flush();
+        std::cout << "jobs_dispatched: " << jobs_dispatched << std::endl;
 
     }
 

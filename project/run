@@ -6,7 +6,8 @@ PYTHON_PROG_NAME="/home/xalotzin/.local/share/pipx/venvs/numpy/bin/python"
 test_id="${1:-0}"
 config_path="${2:-simulation_config.json}"
 algorithm_override="${3:-}"
-folder_name="tests/${test_id}"
+test_root="tests/${test_id}"
+result_root="results/${test_id}"
 header="ts_us,event,job_id,worktime,qid,worker_id,qsize,qweight,extra"
 initial_pwd="$(pwd)"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -39,28 +40,172 @@ print(
 #Compilar
 make
 
-#Ejecutar
-mkdir -p "${folder_name}/plots"
-echo "$header" > "${folder_name}/JSQ_simulation.log"
-echo "$header" > "${folder_name}/workers_simulation.log"
-if [ -n "$algorithm_override" ]; then
-    "./${PROGRAM_NAME}" "$folder_name" "$config_path" "$algorithm_override"
+mkdir -p "$result_root"
+cp "$config_path" "${result_root}/config.json"
+{
+    echo "test_id=${test_id}"
+    echo "config=${config_path}"
+    echo "nqueues=${nqueues}"
+    echo "sample_every=${sample_every}"
+    echo "bin_ms=${bin_ms}"
+    echo
+} > "${result_root}/result.txt"
+
+run_algorithm() {
+    local algorithm="$1"
+    local run_folder="${test_root}/${algorithm}"
+
+    rm -rf "$run_folder"
+    mkdir -p "$run_folder"
+
+    echo "$header" > "${run_folder}/JSQ_simulation.log"
+    echo "$header" > "${run_folder}/workers_simulation.log"
+
+    "./${PROGRAM_NAME}" "$run_folder" "$config_path" "$algorithm"
+
+    cat "${run_folder}"/worker_*.log >> "${run_folder}/workers_simulation.log"
+
+    "$PYTHON_PROG_NAME" plot_jsq.py \
+        "${run_folder}/JSQ_simulation.log" \
+        "${run_folder}/workers_simulation.log" \
+        "${nqueues}" \
+        "${sample_every}" \
+        "${bin_ms}" \
+        "$result_root" \
+        "_${algorithm}_${test_id}"
+
+    "$PYTHON_PROG_NAME" -c '
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+cols = ["ts_us","event","job_id","worktime","qid","worker_id","qsize","qweight","extra"]
+
+algorithm, jsq_path, workers_path, nqueues, config_path, result_path = sys.argv[1:]
+nqueues = int(nqueues)
+
+def load_log(path):
+    df = pd.read_csv(path, names=cols, header=None, on_bad_lines="skip")
+    df = df[df["ts_us"].astype(str) != "ts_us"].copy()
+    for col in ["ts_us", "job_id", "worktime", "qid", "worker_id", "qsize", "qweight"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df["event"] = df["event"].astype(str)
+    df["extra"] = df["extra"].astype(str)
+    return df.dropna(subset=["ts_us"]).copy()
+
+with open(config_path, "r", encoding="utf-8") as fh:
+    cfg = json.load(fh)
+
+sim = cfg.get("simulation", cfg)
+nworkers_per_queue = int(sim.get("nworkers", 0))
+configured_workers = nqueues * nworkers_per_queue
+simulation_seconds = float(sim.get("simulation_seconds", 0))
+
+jsq = load_log(jsq_path)
+workers = load_log(workers_path)
+
+push = jsq[(jsq["event"] == "PUSH") & (jsq["job_id"] >= 0)].copy()
+pop = workers[
+    (workers["event"] == "POP") &
+    (workers["extra"] == "WORKER") &
+    (workers["job_id"] >= 0)
+].copy()
+
+jobs_dispatched = int(len(push))
+jobs_attended = int(len(pop))
+active_workers = int(pop["worker_id"].nunique()) if not pop.empty else 0
+last_ts_us = max(
+    float(jsq["ts_us"].max()) if not jsq.empty else 0.0,
+    float(workers["ts_us"].max()) if not workers.empty else 0.0,
+)
+duration_s = last_ts_us / 1_000_000.0
+dispatch_rate = jobs_dispatched / simulation_seconds if simulation_seconds > 0 else 0.0
+attended_rate = jobs_attended / duration_s if duration_s > 0 else 0.0
+
+queue_counts = np.bincount(
+    push["qid"].dropna().astype(int).clip(lower=0).to_numpy(),
+    minlength=nqueues,
+)[:nqueues] if jobs_dispatched else np.zeros(nqueues, dtype=np.int64)
+
+worker_counts = pop.groupby("worker_id")["job_id"].count().to_numpy(dtype=float)
+
+def stats(prefix, values):
+    values = np.asarray(values, dtype=float)
+    if values.size == 0:
+        values = np.array([0.0])
+    mean = float(values.mean())
+    std = float(values.std())
+    cv = std / mean if mean > 0 else 0.0
+    return {
+        f"{prefix}_min": float(values.min()),
+        f"{prefix}_mean": mean,
+        f"{prefix}_max": float(values.max()),
+        f"{prefix}_std": std,
+        f"{prefix}_cv": cv,
+        f"{prefix}_p95": float(np.percentile(values, 95)),
+        f"{prefix}_p99": float(np.percentile(values, 99)),
+    }
+
+metrics = {
+    "algorithm": algorithm,
+    "simulation_seconds": simulation_seconds,
+    "duration_s": duration_s,
+    "configured_workers": configured_workers,
+    "active_workers": active_workers,
+    "jobs_dispatched": jobs_dispatched,
+    "jobs_attended": jobs_attended,
+    "jobs_pending_or_dropped": jobs_dispatched - jobs_attended,
+    "dispatch_jobs_per_s": dispatch_rate,
+    "attended_jobs_per_s": attended_rate,
+}
+metrics.update(stats("queue_dispatch", queue_counts))
+metrics.update(stats("worker_completed", worker_counts))
+
+with open(result_path, "a", encoding="utf-8") as fh:
+    fh.write(f"[{algorithm}]\n")
+    for key, value in metrics.items():
+        if isinstance(value, float):
+            fh.write(f"{key}={value:.6f}\n")
+        else:
+            fh.write(f"{key}={value}\n")
+    fh.write("\n")
+' "$algorithm" \
+        "${run_folder}/JSQ_simulation.log" \
+        "${run_folder}/workers_simulation.log" \
+        "${nqueues}" \
+        "$config_path" \
+        "${result_root}/result.txt"
+}
+
+if [[ "$algorithm_override" == "all" || "$algorithm_override" == "ALL" || "$algorithm_override" == "--all" ]]; then
+    algorithms=("JSQ" "LSL" "POWER_OF_2" "BAYES_PARTIAL")
+elif [ -n "$algorithm_override" ]; then
+    algorithms=("$algorithm_override")
 else
-    "./${PROGRAM_NAME}" "$folder_name" "$config_path"
+    algorithms=("$("$PYTHON_PROG_NAME" -c '
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    cfg = json.load(fh)
+
+sim = cfg.get("simulation", cfg)
+print(sim.get("algorithm", "BAYES_PARTIAL"))
+' "$config_path")")
 fi
 
-#Unir
-cat "${folder_name}"/worker_*.log >> "${folder_name}/workers_simulation.log"
+for algorithm in "${algorithms[@]}"; do
+    run_algorithm "$algorithm"
+done
 
-#Graficar
-"$PYTHON_PROG_NAME" plot_jsq.py \
-    "${folder_name}/JSQ_simulation.log" \
-    "${folder_name}/workers_simulation.log" \
-    "${nqueues}" \
-    "${sample_every}" \
-    "${bin_ms}" \
-    "${folder_name}/plots" \
-    "_${test_id}"
+"$PYTHON_PROG_NAME" combine_plots.py "$result_root" "$test_id"
+
+rm -rf "$test_root"
+
+echo "Resultados generados en ${result_root}"
 
 #cd ~/JSQ
 #python3 -m venv .venv

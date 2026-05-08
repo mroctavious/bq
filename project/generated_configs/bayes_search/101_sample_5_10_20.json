@@ -2,34 +2,29 @@
   "simulation": {
     "algorithm": "BAYES_PARTIAL",
     "seed": 87621977,
-    "nqueues": 16384,
+    "nqueues": 256,
     "max_queue_size": 100,
     "nworkers": 2,
     "njobs": 10000000,
     "nsimulations": 1000000,
     "simulation_seconds": 10,
-    "arrival_interval_us": 0,
     "min_w": 1,
     "max_w": 200
   },
-
   "plot": {
-    "sample_every": 2000,
-    "bin_ms": 100
+    "sample_every": 5000,
+    "bin_ms": 250
   },
-
   "bayesian": {
     "window_ms": 5000,
-
     "selection": {
-      "default_sample_size": 3,
+      "default_sample_size": 10,
       "sample_size_by_priority": {
-        "LOW": 2,
-        "MEDIUM": 3,
-        "HIGH": 5
+        "LOW": 5,
+        "MEDIUM": 10,
+        "HIGH": 20
       }
     },
-
     "discretization": {
       "queue_size": {
         "low_max": 2,
@@ -44,33 +39,29 @@
         "medium_max": 1.2
       }
     },
-
     "score": {
-      "base": 0.50,
-
+      "base": 0.5,
       "queue_size": {
         "LOW": 0.25,
         "MEDIUM": 0.05,
-        "HIGH": -0.30
+        "HIGH": -0.3
       },
-
       "rho": {
-        "LOW": 0.20,
+        "LOW": 0.2,
         "MEDIUM": 0.05,
-        "HIGH": -0.30
+        "HIGH": -0.3
       },
-
       "health": {
-        "GOOD": 0.20,
+        "GOOD": 0.2,
         "DEGRADED": -0.15,
         "BAD": -0.99
       },
-
       "priority_high": {
-        "penalty_if_queue_not_low": -0.10,
-        "penalty_if_rho_high": -0.20,
-        "penalty_if_health_not_good": -0.20
+        "penalty_if_queue_not_low": -0.1,
+        "penalty_if_rho_high": -0.2,
+        "penalty_if_health_not_good": -0.2
       }
     }
-  }
+  },
+  "test_name": "sample_5_10_20"
 }
